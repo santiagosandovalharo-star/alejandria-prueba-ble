@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alejandría · Prueba de aparatos Bluetooth</title>
+<meta name="robots" content="noindex">
+<style>
+:root{--bg:#f6f8f7;--card:#fff;--tx:#14211c;--mu:#5b6b65;--pri:#0f6b5c;--ok:#1b7f3b;--err:#b3261e;--line:#dfe6e3}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1513;--card:#18211e;--tx:#e8efec;--mu:#9fb0a9;--line:#2a3632}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 -apple-system,system-ui,Segoe UI,Roboto,sans-serif}
+main{max-width:560px;margin:0 auto;padding:16px}
+h1{font-size:1.3rem;margin:.2rem 0}.mu{color:var(--mu);font-size:.9rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
+button{font:inherit;border:0;border-radius:10px;padding:12px 14px;background:var(--pri);color:#fff;font-weight:600;width:100%;margin:6px 0}
+button.sec{background:transparent;color:var(--pri);border:1px solid var(--pri)}
+.est{margin:.4rem 0;font-size:.92rem}.est.ok{color:var(--ok)}.est.err{color:var(--err)}
+.lec{border-top:1px solid var(--line);padding:10px 0}.lec b{font-size:1.6rem}
+ol{padding-left:1.2rem;margin:.3rem 0}li{margin:.2rem 0}
+</style>
+</head>
+<body>
+<main>
+<h1>Prueba de aparatos Bluetooth</h1>
+<p class="mu">Alejandría · página de laboratorio. No guarda nada ni envía datos: solo muestra lo que el aparato transmite.</p>
+
+<div class="card">
+<b>Antes de empezar</b>
+<ol class="mu">
+<li>Cierre nRF Connect u otras apps conectadas al aparato.</li>
+<li>Omron: mantenga presionado ⇆ unos 2 segundos hasta que parpadee la <b>P</b>.</li>
+<li>Toque el botón del aparato aquí abajo y elíjalo en la lista.</li>
+</ol>
+</div>
+
+<div class="card">
+<button data-t="pa">Baumanómetro</button>
+<button data-t="temp">Termómetro</button>
+<button data-t="ox">Oxímetro</button>
+<button class="sec" id="todos">¿No aparece? Mostrar todos los aparatos</button>
+<p class="est" id="est" role="status">Listo.</p>
+</div>
+
+<div class="card"><b>Lecturas recibidas</b><div id="lecs"><p class="mu">Todavía ninguna.</p></div></div>
+</main>
+<script>
+const T={pa:{n:"Baumanómetro",svc:0x1810,chs:[0x2A35],ay:"Tome la presión con START/STOP. Al terminar presione ⇆ una vez."},
+temp:{n:"Termómetro",svc:0x1809,chs:[0x2A1C],ay:"Tome la temperatura."},
+ox:{n:"Oxímetro",svc:0x1822,chs:[0x2A5F,0x2A5E],ay:"Coloque el oxímetro en el dedo."}};
+let ult="pa";const $=id=>document.getElementById(id);
+const est=(m,c)=>{const e=$("est");e.textContent=m;e.className="est "+(c||"")};
+function sfloat(v){let m=v&0x0FFF,x=v>>12;if(m>=0x800)m-=0x1000;if(x>=8)x-=16;return m*Math.pow(10,x)}
+function float32(v){let m=v&0xFFFFFF,x=(v>>24)&0xFF;if(m>=0x800000)m-=0x1000000;if(x>=128)x-=256;return m*Math.pow(10,x)}
+const r1=n=>Math.round(n*10)/10;
+function parse(t,ch,dv){const f=dv.getUint8(0),o={};
+ if(t==="pa"){const k=f&1;let p=7;o.ta=r1(sfloat(dv.getUint16(1,true)))+"/"+r1(sfloat(dv.getUint16(3,true)))+(k?" kPa":" mmHg");
+  if(f&2){const y=dv.getUint16(p,true);o.hora=`${y}-${String(dv.getUint8(p+2)).padStart(2,"0")}-${String(dv.getUint8(p+3)).padStart(2,"0")} ${String(dv.getUint8(p+4)).padStart(2,"0")}:${String(dv.getUint8(p+5)).padStart(2,"0")}`;p+=7}
+  if(f&4){o.pulso=r1(sfloat(dv.getUint16(p,true)));p+=2}}
+ else if(t==="temp"){o.temp=r1(float32(dv.getUint32(1,true)))+(f&1?" °F":" °C")}
+ else{o.spo2=r1(sfloat(dv.getUint16(1,true)));o.pulso=r1(sfloat(dv.getUint16(3,true)))}
+ return o}
+function mostrar(t,nom,o){const L=$("lecs");if(L.querySelector(".mu"))L.innerHTML="";const d=document.createElement("div");d.className="lec";
+ const txt=t==="pa"?`<b>${o.ta}</b>${o.pulso!=null?` · pulso ${o.pulso}`:""}${o.hora?`<br><span class="mu">Hora del aparato: ${o.hora}</span>`:""}`:t==="temp"?`<b>${o.temp}</b>`:`<b>SpO₂ ${o.spo2}%</b> · pulso ${o.pulso}`;
+ d.innerHTML=txt+`<br><span class="mu">${nom} · recibida ${new Date().toLocaleTimeString()}</span>`;L.prepend(d)}
+async function leer(t,todos){const B=T[t];ult=t;
+ if(!navigator.bluetooth||!navigator.bluetooth.requestDevice){est("Este navegador no permite Bluetooth. En iPhone use la app Bluefy; en Android, Chrome.","err");return}
+ try{est("Elija el "+B.n.toLowerCase()+" en la lista…");
+  const dev=await navigator.bluetooth.requestDevice(todos?{acceptAllDevices:true,optionalServices:[B.svc,0x180F]}:{filters:[{services:[B.svc]}],optionalServices:[B.svc,0x180F]});
+  const nom=dev.name||B.n;est("Conectando con "+nom+"…");
+  const srv=await dev.gatt.connect();let sv;try{sv=await srv.getPrimaryService(B.svc)}catch(_){throw new Error("Ese aparato no tiene el servicio estándar de "+B.n.toLowerCase()+".")}
+  let bat="";try{const bs=await srv.getPrimaryService(0x180F),bc=await bs.getCharacteristic(0x2A19),bv=await bc.readValue();bat=" · batería "+bv.getUint8(0)+"%"}catch(_){}
+  let ok=0;for(const cid of B.chs){let c;try{c=await sv.getCharacteristic(cid)}catch(_){continue}ok++;
+   c.addEventListener("characteristicvaluechanged",ev=>{try{mostrar(t,nom,parse(t,cid,ev.target.value));est("Lectura recibida de "+nom+".","ok")}catch(x){est("Llegó un dato que no se pudo leer.","err")}});
+   await c.startNotifications()}
+  if(!ok)throw new Error("No se encontró la característica de medición.");
+  est("Conectado a "+nom+bat+". "+B.ay,"ok");
+  dev.addEventListener("gattserverdisconnected",()=>est("El aparato se desconectó (es normal al terminar). Para otra lectura, vuelva a tocar el botón."))}
+ catch(x){est(x&&x.name==="NotFoundError"?"No se eligió ningún aparato. Si no apareció, use “Mostrar todos los aparatos”.":x&&x.name==="SecurityError"?"El Bluetooth fue bloqueado. Revise los permisos del navegador.":"No se pudo conectar: "+(x&&x.message||x),"err")}}
+document.querySelectorAll("button[data-t]").forEach(b=>b.onclick=()=>leer(b.dataset.t,false));
+$("todos").onclick=()=>leer(ult,true);
+</script>
+</body>
+</html>
