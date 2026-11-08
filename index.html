@@ -22,7 +22,7 @@ ol{padding-left:1.2rem;margin:.3rem 0}li{margin:.2rem 0}
 <body>
 <main>
 <h1>Prueba de aparatos Bluetooth</h1>
-<p class="mu">Versión 2 · Alejandría · página de laboratorio. No guarda nada ni envía datos: solo muestra lo que el aparato transmite.</p>
+<p class="mu">Versión 3 · Alejandría · página de laboratorio. No guarda nada ni envía datos: solo muestra lo que el aparato transmite.</p>
 
 <div class="card">
 <b>Antes de empezar</b>
@@ -44,9 +44,10 @@ ol{padding-left:1.2rem;margin:.3rem 0}li{margin:.2rem 0}
 <div class="card"><b>Lecturas recibidas</b><div id="lecs"><p class="mu">Todavía ninguna.</p></div></div>
 </main>
 <script>
-const T={pa:{n:"Baumanómetro",svc:0x1810,chs:[0x2A35],ay:"Tome la presión con START/STOP. Al terminar presione ⇆ una vez."},
-temp:{n:"Termómetro",svc:0x1809,chs:[0x2A1C],ay:"Tome la temperatura."},
-ox:{n:"Oxímetro",svc:0x1822,chs:[0x2A5F,0x2A5E],ay:"Coloque el oxímetro en el dedo."}};
+const U=h=>"0000"+h.toString(16).padStart(4,"0")+"-0000-1000-8000-00805f9b34fb";
+const T={pa:{n:"Baumanómetro",svc:U(0x1810),chs:[U(0x2A35)],ay:"Tome la presión con START/STOP. Al terminar presione ⇆ una vez."},
+temp:{n:"Termómetro",svc:U(0x1809),chs:[U(0x2A1C)],ay:"Tome la temperatura."},
+ox:{n:"Oxímetro",svc:U(0x1822),chs:[U(0x2A5F),U(0x2A5E)],ay:"Coloque el oxímetro en el dedo."}};
 let ult="pa";const $=id=>document.getElementById(id);
 const est=(m,c)=>{const e=$("est");e.textContent=m;e.className="est "+(c||"")};
 function sfloat(v){let m=v&0x0FFF,x=v>>12;if(m>=0x800)m-=0x1000;if(x>=8)x-=16;return m*Math.pow(10,x)}
@@ -68,7 +69,7 @@ async function suscribir(c){try{await c.startNotifications()}catch(e1){est("El a
 async function leer(t,todos){const B=T[t];ult=t;let paso="elegir el aparato";
  if(!navigator.bluetooth||!navigator.bluetooth.requestDevice){est("Este navegador no permite Bluetooth. En iPhone use la app Bluefy; en Android, Chrome.","err");return}
  try{est("Elija el "+B.n.toLowerCase()+" en la lista…");
-  const dev=await navigator.bluetooth.requestDevice(todos?{acceptAllDevices:true,optionalServices:[B.svc,0x180F]}:{filters:[{services:[B.svc]}],optionalServices:[B.svc,0x180F]});
+  const dev=await navigator.bluetooth.requestDevice(todos?{acceptAllDevices:true,optionalServices:[B.svc]}:{filters:[{services:[B.svc]}]});
   const nom=dev.name||B.n;paso="conectar";est("Conectando con "+nom+"…");
   const srv=await dev.gatt.connect();paso="buscar el servicio de "+B.n.toLowerCase();const sv=await srv.getPrimaryService(B.svc);const bat="";
   let ok=0;for(const cid of B.chs){let c;paso="buscar la medición";try{c=await sv.getCharacteristic(cid)}catch(_){continue}ok++;paso="suscribirse a las lecturas";
