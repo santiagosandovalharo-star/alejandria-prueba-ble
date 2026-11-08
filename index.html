@@ -22,7 +22,7 @@ ol{padding-left:1.2rem;margin:.3rem 0}li{margin:.2rem 0}
 <body>
 <main>
 <h1>Prueba de aparatos Bluetooth</h1>
-<p class="mu">Alejandría · página de laboratorio. No guarda nada ni envía datos: solo muestra lo que el aparato transmite.</p>
+<p class="mu">Versión 2 · Alejandría · página de laboratorio. No guarda nada ni envía datos: solo muestra lo que el aparato transmite.</p>
 
 <div class="card">
 <b>Antes de empezar</b>
@@ -62,20 +62,22 @@ function parse(t,ch,dv){const f=dv.getUint8(0),o={};
 function mostrar(t,nom,o){const L=$("lecs");if(L.querySelector(".mu"))L.innerHTML="";const d=document.createElement("div");d.className="lec";
  const txt=t==="pa"?`<b>${o.ta}</b>${o.pulso!=null?` · pulso ${o.pulso}`:""}${o.hora?`<br><span class="mu">Hora del aparato: ${o.hora}</span>`:""}`:t==="temp"?`<b>${o.temp}</b>`:`<b>SpO₂ ${o.spo2}%</b> · pulso ${o.pulso}`;
  d.innerHTML=txt+`<br><span class="mu">${nom} · recibida ${new Date().toLocaleTimeString()}</span>`;L.prepend(d)}
-async function leer(t,todos){const B=T[t];ult=t;
+const pausa=ms=>new Promise(z=>setTimeout(z,ms));
+const det=x=>{if(x==null)return "sin detalle";if(typeof x!=="object")return "código "+x;return [x.name,x.message,x.code!=null?"código "+x.code:""].filter(Boolean).join(" · ")||String(x)};
+async function suscribir(c){try{await c.startNotifications()}catch(e1){est("El aparato pidió enlazar. Si el iPhone muestra «Enlazar», acéptelo. Reintentando…");await pausa(4000);await c.startNotifications()}}
+async function leer(t,todos){const B=T[t];ult=t;let paso="elegir el aparato";
  if(!navigator.bluetooth||!navigator.bluetooth.requestDevice){est("Este navegador no permite Bluetooth. En iPhone use la app Bluefy; en Android, Chrome.","err");return}
  try{est("Elija el "+B.n.toLowerCase()+" en la lista…");
   const dev=await navigator.bluetooth.requestDevice(todos?{acceptAllDevices:true,optionalServices:[B.svc,0x180F]}:{filters:[{services:[B.svc]}],optionalServices:[B.svc,0x180F]});
-  const nom=dev.name||B.n;est("Conectando con "+nom+"…");
-  const srv=await dev.gatt.connect();let sv;try{sv=await srv.getPrimaryService(B.svc)}catch(_){throw new Error("Ese aparato no tiene el servicio estándar de "+B.n.toLowerCase()+".")}
-  let bat="";try{const bs=await srv.getPrimaryService(0x180F),bc=await bs.getCharacteristic(0x2A19),bv=await bc.readValue();bat=" · batería "+bv.getUint8(0)+"%"}catch(_){}
-  let ok=0;for(const cid of B.chs){let c;try{c=await sv.getCharacteristic(cid)}catch(_){continue}ok++;
+  const nom=dev.name||B.n;paso="conectar";est("Conectando con "+nom+"…");
+  const srv=await dev.gatt.connect();paso="buscar el servicio de "+B.n.toLowerCase();const sv=await srv.getPrimaryService(B.svc);const bat="";
+  let ok=0;for(const cid of B.chs){let c;paso="buscar la medición";try{c=await sv.getCharacteristic(cid)}catch(_){continue}ok++;paso="suscribirse a las lecturas";
    c.addEventListener("characteristicvaluechanged",ev=>{try{mostrar(t,nom,parse(t,cid,ev.target.value));est("Lectura recibida de "+nom+".","ok")}catch(x){est("Llegó un dato que no se pudo leer.","err")}});
-   await c.startNotifications()}
+   await suscribir(c)}
   if(!ok)throw new Error("No se encontró la característica de medición.");
   est("Conectado a "+nom+bat+". "+B.ay,"ok");
   dev.addEventListener("gattserverdisconnected",()=>est("El aparato se desconectó (es normal al terminar). Para otra lectura, vuelva a tocar el botón."))}
- catch(x){est(x&&x.name==="NotFoundError"?"No se eligió ningún aparato. Si no apareció, use “Mostrar todos los aparatos”.":x&&x.name==="SecurityError"?"El Bluetooth fue bloqueado. Revise los permisos del navegador.":"No se pudo conectar: "+(x&&x.message||x),"err")}}
+ catch(x){est(x&&x.name==="NotFoundError"?"No se eligió ningún aparato. Si no apareció, use “Mostrar todos los aparatos”.":x&&x.name==="SecurityError"?"El Bluetooth fue bloqueado. Revise los permisos del navegador.":"Falló al "+paso+": "+det(x),"err")}}
 document.querySelectorAll("button[data-t]").forEach(b=>b.onclick=()=>leer(b.dataset.t,false));
 $("todos").onclick=()=>leer(ult,true);
 </script>
