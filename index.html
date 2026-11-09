@@ -22,7 +22,7 @@ ol{padding-left:1.2rem;margin:.3rem 0}li{margin:.2rem 0}
 <body>
 <main>
 <h1>Prueba de aparatos Bluetooth</h1>
-<p class="mu">Versión 3 · Alejandría · página de laboratorio. No guarda nada ni envía datos: solo muestra lo que el aparato transmite.</p>
+<p class="mu">Versión 4 · Alejandría · página de laboratorio. No guarda nada ni envía datos: solo muestra lo que el aparato transmite.</p>
 
 <div class="card">
 <b>Antes de empezar</b>
@@ -30,6 +30,7 @@ ol{padding-left:1.2rem;margin:.3rem 0}li{margin:.2rem 0}
 <li>Cierre nRF Connect u otras apps conectadas al aparato.</li>
 <li>Omron: mantenga presionado ⇆ unos 2 segundos hasta que parpadee la <b>P</b>.</li>
 <li>Toque el botón del aparato aquí abajo y elíjalo en la lista.</li>
+<li>Ya conectado, tome la presión y presione ⇆ una vez: la página se reconecta sola durante 3 minutos.</li>
 </ol>
 </div>
 
@@ -42,6 +43,7 @@ ol{padding-left:1.2rem;margin:.3rem 0}li{margin:.2rem 0}
 </div>
 
 <div class="card"><b>Lecturas recibidas</b><div id="lecs"><p class="mu">Todavía ninguna.</p></div></div>
+<div class="card"><b>Bitácora de conexión</b><div id="bit" class="mu"></div></div>
 </main>
 <script>
 const U=h=>"0000"+h.toString(16).padStart(4,"0")+"-0000-1000-8000-00805f9b34fb";
@@ -66,19 +68,27 @@ function mostrar(t,nom,o){const L=$("lecs");if(L.querySelector(".mu"))L.innerHTM
 const pausa=ms=>new Promise(z=>setTimeout(z,ms));
 const det=x=>{if(x==null)return "sin detalle";if(typeof x!=="object")return "código "+x;return [x.name,x.message,x.code!=null?"código "+x.code:""].filter(Boolean).join(" · ")||String(x)};
 async function suscribir(c){try{await c.startNotifications()}catch(e1){est("El aparato pidió enlazar. Si el iPhone muestra «Enlazar», acéptelo. Reintentando…");await pausa(4000);await c.startNotifications()}}
+let activo=null;
+function log(m){const L=$("bit");const d=document.createElement("div");d.textContent=new Date().toLocaleTimeString()+" · "+m;L.prepend(d)}
+async function ponerHora(srv){try{const cs=await srv.getPrimaryService(U(0x1805)),ch=await cs.getCharacteristic(U(0x2A2B)),n=new Date(),b=new Uint8Array(10),y=n.getFullYear();b[0]=y&255;b[1]=y>>8;b[2]=n.getMonth()+1;b[3]=n.getDate();b[4]=n.getHours();b[5]=n.getMinutes();b[6]=n.getSeconds();b[7]=n.getDay()||7;await ch.writeValue(b);log("Hora enviada al aparato")}catch(_){}}
+async function sesion(t,dev,nom){const B=T[t];
+ const srv=await dev.gatt.connect();log("Conectado");
+ const sv=await srv.getPrimaryService(B.svc);let ok=0;
+ for(const cid of B.chs){let c;try{c=await sv.getCharacteristic(cid)}catch(_){continue}ok++;
+  if(!c._esc){c._esc=1;c.addEventListener("characteristicvaluechanged",ev=>{try{mostrar(t,nom,parse(t,cid,ev.target.value));est("Lectura recibida de "+nom+".","ok");log("Lectura recibida")}catch(x){est("Llegó un dato que no se pudo leer.","err");log("Dato no legible")}})}
+  await suscribir(c);log("Suscrito a lecturas")}
+ if(!ok)throw new Error("No se encontró la característica de medición.");
+ ponerHora(srv);est("Conectado a "+nom+". "+B.ay,"ok")}
 async function leer(t,todos){const B=T[t];ult=t;let paso="elegir el aparato";
- if(!navigator.bluetooth||!navigator.bluetooth.requestDevice){est("Este navegador no permite Bluetooth. En iPhone use la app Bluefy; en Android, Chrome.","err");return}
+ if(!navigator.bluetooth||!navigator.bluetooth.requestDevice){est("Este navegador no permite Bluetooth. Use Chrome o Edge.","err");return}
  try{est("Elija el "+B.n.toLowerCase()+" en la lista…");
-  const dev=await navigator.bluetooth.requestDevice(todos?{acceptAllDevices:true,optionalServices:[B.svc]}:{filters:[{services:[B.svc]}]});
-  const nom=dev.name||B.n;paso="conectar";est("Conectando con "+nom+"…");
-  const srv=await dev.gatt.connect();paso="buscar el servicio de "+B.n.toLowerCase();const sv=await srv.getPrimaryService(B.svc);const bat="";
-  let ok=0;for(const cid of B.chs){let c;paso="buscar la medición";try{c=await sv.getCharacteristic(cid)}catch(_){continue}ok++;paso="suscribirse a las lecturas";
-   c.addEventListener("characteristicvaluechanged",ev=>{try{mostrar(t,nom,parse(t,cid,ev.target.value));est("Lectura recibida de "+nom+".","ok")}catch(x){est("Llegó un dato que no se pudo leer.","err")}});
-   await suscribir(c)}
-  if(!ok)throw new Error("No se encontró la característica de medición.");
-  est("Conectado a "+nom+bat+". "+B.ay,"ok");
-  dev.addEventListener("gattserverdisconnected",()=>est("El aparato se desconectó (es normal al terminar). Para otra lectura, vuelva a tocar el botón."))}
- catch(x){est(x&&x.name==="NotFoundError"?"No se eligió ningún aparato. Si no apareció, use “Mostrar todos los aparatos”.":x&&x.name==="SecurityError"?"El Bluetooth fue bloqueado. Revise los permisos del navegador.":"Falló al "+paso+": "+det(x),"err")}}
+  const dev=await navigator.bluetooth.requestDevice(todos?{acceptAllDevices:true,optionalServices:[B.svc,U(0x1805)]}:{filters:[{services:[B.svc]}],optionalServices:[U(0x1805)]});
+  const nom=dev.name||B.n;activo={dev,fin:Date.now()+180000};const yo=activo;
+  dev.addEventListener("gattserverdisconnected",async()=>{log("Desconectado");
+   while(activo===yo&&Date.now()<yo.fin){est("Esperando al aparato… presione ⇆ una vez en el Omron.");try{await sesion(t,dev,nom);return}catch(e){await pausa(1500)}}
+   if(activo===yo)est("Se dejó de esperar. Toque el botón otra vez para reintentar.")});
+  paso="conectar";est("Conectando con "+nom+"…");await sesion(t,dev,nom)}
+ catch(x){est(x&&x.name==="NotFoundError"?"No se eligió ningún aparato. Si no apareció, use “Mostrar todos los aparatos”.":"Falló al "+paso+": "+det(x),"err");log("Error: "+det(x))}}
 document.querySelectorAll("button[data-t]").forEach(b=>b.onclick=()=>leer(b.dataset.t,false));
 $("todos").onclick=()=>leer(ult,true);
 </script>
